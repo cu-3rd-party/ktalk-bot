@@ -213,6 +213,7 @@ async fn maintain_system_ws(
         json!({"a":"message_subscribe","reqId":generate_request_id(),"data":{"topic":"personal"},"session":session_id}),
         json!({"a":"user_status","reqId":generate_request_id(),"data":{"userKey":user_id,"status":"inMeeting"},"session":session_id}),
         json!({"a":"chat_join","reqId":generate_request_id(),"data":{"name":room_name,"popup":false,"platform":"web"},"session":session_id}),
+        json!({"a":"resource_active_get","reqId":generate_request_id(),"data":{"roomName":room_name},"session":session_id}),
     ] {
         socket
             .send(Message::Text(payload.to_string().into()))
@@ -348,17 +349,18 @@ async fn capture_xmpp_presence(
         .body(())?;
     let (mut socket, _) = connect_async(request).await?;
     let system_nick = Uuid::new_v4().simple().to_string()[..8].to_owned();
-    let mut handled_stanzas = 0usize;
     let mut state = XmppState::Auth;
     let mut joined = false;
     let mut participants = Vec::<ParticipantSnapshot>::new();
     let deadline = Instant::now() + duration;
     let mut ping_interval = interval(Duration::from_secs(10));
+    let machine_uid = Uuid::new_v4().simple().to_string();
 
     socket.send(Message::Text(
         "<open to=\"meet.jitsi\" version=\"1.0\" xmlns=\"urn:ietf:params:xml:ns:xmpp-framing\"/>"
             .into(),
-    )).await?;
+    ))
+    .await?;
 
     loop {
         tokio::select! {
@@ -383,10 +385,6 @@ async fn capture_xmpp_presence(
                     _ => continue,
                 };
 
-                if text.starts_with("<iq") || text.starts_with("<presence") || text.starts_with("<message") {
-                    handled_stanzas += 1;
-                }
-
                 if let Some(snapshot) = parse_participant_presence(&text) {
                     if !participants.iter().any(|existing| existing.occupant_id == snapshot.occupant_id) {
                         participants.push(snapshot);
@@ -408,30 +406,43 @@ async fn capture_xmpp_presence(
                     }
                     XmppState::Bind if text.contains("urn:ietf:params:xml:ns:xmpp-bind") => {
                         socket.send(Message::Text(
-                            "<iq type=\"set\" id=\"bind_1\" xmlns=\"jabber:client\"><bind xmlns=\"urn:ietf:params:xml:ns:xmpp-bind\"/></iq>".into(),
+                            "<iq id=\"_bind_auth_2\" type=\"set\" xmlns=\"jabber:client\"><bind xmlns=\"urn:ietf:params:xml:ns:xmpp-bind\"/></iq>".into(),
                         )).await?;
-                        state = XmppState::EnableSm;
+                        state = XmppState::BindRequested;
                     }
-                    XmppState::EnableSm if text.contains("bind_1") => {
-                        socket.send(Message::Text("<enable xmlns=\"urn:xmpp:sm:3\" resume=\"false\"/>".into())).await?;
+                    XmppState::BindRequested if text.contains("_bind_auth_2") => {
+                        socket.send(Message::Text(
+                            "<iq id=\"_session_auth_2\" type=\"set\" xmlns=\"jabber:client\"><session xmlns=\"urn:xmpp:session\"/></iq>".into(),
+                        )).await?;
+                        state = XmppState::SessionRequested;
+                    }
+                    XmppState::SessionRequested if text.contains("_session_auth_2") => {
+                        let conference = format!(
+                            "<iq id=\"{}:sendIQ\" to=\"focus.meet.jitsi\" type=\"set\" xmlns=\"jabber:client\"><conference machine-uid=\"{}\" room=\"{}@muc.meet.jitsi\" xmlns=\"http://jitsi.org/protocol/focus\"><property name=\"rtcstatsEnabled\" value=\"false\"/><property name=\"visitors-version\" value=\"1\"/></conference></iq>",
+                            Uuid::new_v4(),
+                            machine_uid,
+                            room.conference_id
+                        );
+                        socket.send(Message::Text(conference.into())).await?;
+                        state = XmppState::ConferenceRequested;
+                    }
+                    XmppState::ConferenceRequested if text.contains("focus.meet.jitsi") => {
                         let user_info = json!({
                             "key": profile.user_id,
                             "firstName": profile.first_name,
                             "lastName": profile.last_name,
                             "middleName": "",
                             "isKiosk": false
-                        }).to_string().replace('"', "&quot;");
-                        let source_info = json!({
-                            format!("{}-a0", system_nick): {"muted": true},
-                            format!("{}-v0", system_nick): {"muted": true}
-                        }).to_string().replace('"', "&quot;");
+                        })
+                        .to_string()
+                        .replace('"', "&quot;");
                         let presence = format!(
-                            "<presence to=\"{}@muc.meet.jitsi/{}\" xmlns=\"jabber:client\"><x xmlns=\"http://jabber.org/protocol/muc\"/><audiomuted>true</audiomuted><videomuted>true</videomuted><stats-id>ktalk-bot</stats-id><c hash=\"sha-1\" node=\"https://jitsi.org/jitsi-meet\" ver=\"+mpajJhafj8jFogLBKsPbQfMgzU=\" xmlns=\"http://jabber.org/protocol/caps\"/><jitsi_participant_codecList>vp9,vp8,h264,av1</jitsi_participant_codecList><nick xmlns=\"http://jabber.org/protocol/nick\">{}</nick><jitsi_participant_user-info>{}</jitsi_participant_user-info><SourceInfo>{}</SourceInfo><jitsi_participant_video-size>{{&quot;width&quot;:960,&quot;height&quot;:720}}</jitsi_participant_video-size></presence>",
+                            "<presence to=\"{}@muc.meet.jitsi/{}\" xmlns=\"jabber:client\"><x xmlns=\"http://jabber.org/protocol/muc\"/><stats-id>{}</stats-id><c hash=\"sha-1\" node=\"https://jitsi.org/jitsi-meet\" ver=\"+mpajJhafj8jFogLBKsPbQfMgzU=\" xmlns=\"http://jabber.org/protocol/caps\"/><SourceInfo>{{}}</SourceInfo><jitsi_participant_codecList>vp9,vp8,h264,av1</jitsi_participant_codecList><nick xmlns=\"http://jabber.org/protocol/nick\">{}</nick><jitsi_participant_user-info>{}</jitsi_participant_user-info></presence>",
                             room.conference_id,
                             system_nick,
+                            generate_stats_id(),
                             profile.first_name,
-                            user_info,
-                            source_info
+                            user_info
                         );
                         socket.send(Message::Text(presence.into())).await?;
                         state = XmppState::Joined;
@@ -444,11 +455,6 @@ async fn capture_xmpp_presence(
                     && text.contains("status code='110'")
                 {
                     joined = true;
-                }
-
-                if text.contains("<r xmlns") {
-                    let ack = format!("<a xmlns='urn:xmpp:sm:3' h='{handled_stanzas}'/>");
-                    socket.send(Message::Text(ack.into())).await?;
                 }
 
                 if text.contains("urn:xmpp:ping") && text.contains("<ping") {
@@ -482,7 +488,9 @@ enum XmppState {
     Auth,
     WaitSuccess,
     Bind,
-    EnableSm,
+    BindRequested,
+    SessionRequested,
+    ConferenceRequested,
     Joined,
 }
 
@@ -493,6 +501,11 @@ fn generate_request_id() -> String {
         .chars()
         .take(10)
         .collect()
+}
+
+fn generate_stats_id() -> String {
+    let raw = Uuid::new_v4().simple().to_string();
+    format!("{}-{}", &raw[..7], &raw[7..10])
 }
 
 fn extract_attribute(text: &str, name: &str) -> Option<String> {

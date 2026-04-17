@@ -5,6 +5,7 @@
   "description": "Инструмент разработчика для захвата и анализа сетевого трафика KTalk на доменах *.ktalk.ru.",
   "permissions": [
     "activeTab",
+    "cookies",
     "debugger",
     "downloads",
     "storage",

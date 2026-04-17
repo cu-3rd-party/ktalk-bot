@@ -2,12 +2,14 @@ const statusNode = document.getElementById("status");
 const toggleButton = document.getElementById("toggle");
 const clearButton = document.getElementById("clearLog");
 const inspectorButton = document.getElementById("openInspector");
+const copyCookiesButton = document.getElementById("copyCookies");
 
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
 if (!tab?.id || !isKtalkUrl(tab.url)) {
   statusNode.textContent = "Активная вкладка не относится к *.ktalk.ru";
   toggleButton.disabled = true;
+  copyCookiesButton.disabled = true;
 } else {
   await refreshStatus();
 }
@@ -45,6 +47,25 @@ clearButton.addEventListener("click", async () => {
 
 inspectorButton.addEventListener("click", async () => {
   await chrome.tabs.create({ url: chrome.runtime.getURL("inspector.html") });
+});
+
+copyCookiesButton.addEventListener("click", async () => {
+  if (!tab?.url) {
+    return;
+  }
+
+  const result = await chrome.runtime.sendMessage({
+    type: "ktalk.getCookies",
+    url: tab.url
+  });
+
+  if (!result?.ok) {
+    statusNode.textContent = result?.error || "Не удалось получить cookies.";
+    return;
+  }
+
+  await navigator.clipboard.writeText(result.cookieHeader);
+  statusNode.textContent = `Cookies для ${new URL(tab.url).hostname} скопированы в буфер обмена.`;
 });
 
 async function refreshStatus() {

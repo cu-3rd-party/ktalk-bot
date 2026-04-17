@@ -31,6 +31,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case "ktalk.getEvents":
         sendResponse(await chrome.storage.local.get(STORAGE_KEY));
         break;
+      case "ktalk.getCookies":
+        sendResponse(await getCookiesForUrl(message.url));
+        break;
       default:
         sendResponse({ ok: false, error: "unknown message" });
     }
@@ -200,5 +203,48 @@ function isKtalkUrl(url) {
     return parsed.hostname === "ktalk.ru" || parsed.hostname.endsWith(".ktalk.ru");
   } catch (_error) {
     return false;
+  }
+}
+
+async function getCookiesForUrl(url) {
+  if (!isKtalkUrl(url)) {
+    return { ok: false, error: "Cookies можно копировать только для доменов *.ktalk.ru" };
+  }
+
+  try {
+    const parsed = new URL(url);
+    const cookies = await chrome.cookies.getAll({ domain: parsed.hostname });
+    const neededNames = [
+      "sessionToken",
+      "ngtoken",
+      "kontur_ngtoken"
+    ];
+
+    const selected = neededNames
+      .map((name) => cookies.find((cookie) => cookie.name === name))
+      .filter(Boolean);
+
+    if (selected.length === 0) {
+      return { ok: false, error: "Подходящие cookies не найдены на текущем домене." };
+    }
+
+    const cookieHeader = selected
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join("; ");
+
+    await appendEvent({
+      timestamp: new Date().toISOString(),
+      source: "extension",
+      stage: "cookies_copied",
+      domain: parsed.hostname,
+      names: selected.map((cookie) => cookie.name)
+    });
+
+    return {
+      ok: true,
+      cookieHeader
+    };
+  } catch (error) {
+    return { ok: false, error: String(error) };
   }
 }
