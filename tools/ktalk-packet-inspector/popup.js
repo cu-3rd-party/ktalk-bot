@@ -56,16 +56,23 @@ copyCookiesButton.addEventListener("click", async () => {
 
   const result = await chrome.runtime.sendMessage({
     type: "ktalk.getCookies",
+    tabId: tab.id,
     url: tab.url
   });
 
   if (!result?.ok) {
-    statusNode.textContent = result?.error || "Не удалось получить cookies.";
+    statusNode.textContent = result?.error || "Не удалось получить данные авторизации.";
     return;
   }
 
-  await navigator.clipboard.writeText(result.cookieHeader);
-  statusNode.textContent = `Cookies для ${new URL(tab.url).hostname} скопированы в буфер обмена.`;
+  const clipboardText = result.sessionToken
+    ? `${result.cookieHeader}\nsession_token=${result.sessionToken}`
+    : result.cookieHeader;
+
+  await navigator.clipboard.writeText(clipboardText);
+  statusNode.textContent = result.sessionToken
+    ? `Cookies и session token для ${new URL(tab.url).hostname} скопированы в буфер обмена.`
+    : `Cookies для ${new URL(tab.url).hostname} скопированы, session token не найден.`;
 });
 
 async function refreshStatus() {

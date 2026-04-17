@@ -1,4 +1,4 @@
-use crate::domain::auth::CookieBundle;
+use crate::domain::auth::AuthContext;
 use crate::domain::history::ConferenceHistoryRecord;
 use crate::error::Result;
 use crate::infrastructure::http::ktalk_http_client::KTalkHttpClient;
@@ -36,9 +36,9 @@ impl FetchConferenceHistory {
         &self,
         input: FetchConferenceHistoryInput,
     ) -> Result<Vec<ConferenceHistoryRecord>> {
-        let mut cookies = CookieBundle::parse(&input.cookie_header)?;
+        let mut auth = AuthContext::parse(&input.cookie_header, None)?;
         self.http_client
-            .fetch_all_history(&mut cookies, input.max_pages, input.page_size)
+            .fetch_all_history(&mut auth, input.max_pages, input.page_size)
     }
 }
 

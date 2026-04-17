@@ -4,7 +4,7 @@ use reqwest::header::{
     ACCEPT, AUTHORIZATION, CONTENT_TYPE, COOKIE, HeaderMap, HeaderValue, USER_AGENT,
 };
 
-use crate::domain::auth::CookieBundle;
+use crate::domain::auth::AuthContext;
 use crate::domain::bot::UserProfile;
 use crate::domain::history::ConferenceHistoryRecord;
 use crate::domain::room::is_supported_ktalk_host;
@@ -46,12 +46,12 @@ impl KTalkHttpClient {
         &self.base_url
     }
 
-    pub fn bootstrap(&self, cookies: &mut CookieBundle) -> Result<UserProfile> {
+    pub fn bootstrap(&self, auth: &mut AuthContext) -> Result<UserProfile> {
         let response = self
-            .authorized_get(format!("{}/api/context", self.base_url), cookies)?
+            .authorized_get(format!("{}/api/context", self.base_url), auth)?
             .send()?
             .error_for_status()?;
-        cookies.merge_set_cookie_headers(response.headers());
+        auth.merge_set_cookie_headers(response.headers());
         let payload: ContextResponse = response.json()?;
 
         Ok(UserProfile {
@@ -66,19 +66,19 @@ impl KTalkHttpClient {
         })
     }
 
-    pub fn resolve_room(&self, room_name: &str, cookies: &mut CookieBundle) -> Result<String> {
+    pub fn resolve_room(&self, room_name: &str, auth: &mut AuthContext) -> Result<String> {
         let response = self
-            .authorized_get(format!("{}/api/rooms/{room_name}", self.base_url), cookies)?
+            .authorized_get(format!("{}/api/rooms/{room_name}", self.base_url), auth)?
             .send()?
             .error_for_status()?;
-        cookies.merge_set_cookie_headers(response.headers());
+        auth.merge_set_cookie_headers(response.headers());
         let payload: RoomResponse = response.json()?;
         Ok(payload.conference_id)
     }
 
-    pub fn send_activity(&self, room_name: &str, cookies: &mut CookieBundle) -> Result<()> {
+    pub fn send_activity(&self, room_name: &str, auth: &mut AuthContext) -> Result<()> {
         let response = self
-            .authorized_post(format!("{}/api/UserActivities", self.base_url), cookies)?
+            .authorized_post(format!("{}/api/UserActivities", self.base_url), auth)?
             .json(&vec![serde_json::json!({
                 "$type": "GotoRoom",
                 "cameraEnabled": false,
@@ -87,13 +87,13 @@ impl KTalkHttpClient {
                 "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
             })])
             .send()?;
-        cookies.merge_set_cookie_headers(response.headers());
+        auth.merge_set_cookie_headers(response.headers());
         Ok(())
     }
 
     pub fn fetch_all_history(
         &self,
-        cookies: &mut CookieBundle,
+        auth: &mut AuthContext,
         max_pages: usize,
         page_size: usize,
     ) -> Result<Vec<ConferenceHistoryRecord>> {
@@ -102,7 +102,7 @@ impl KTalkHttpClient {
         for page_index in 0..max_pages {
             let skip = page_index * page_size;
             let response = self
-                .authorized_get(format!("{}/api/conferenceshistory", self.base_url), cookies)?
+                .authorized_get(format!("{}/api/conferenceshistory", self.base_url), auth)?
                 .query(&[
                     ("skip", skip.to_string()),
                     ("top", page_size.to_string()),
@@ -110,7 +110,7 @@ impl KTalkHttpClient {
                 ])
                 .send()?
                 .error_for_status()?;
-            cookies.merge_set_cookie_headers(response.headers());
+            auth.merge_set_cookie_headers(response.headers());
             let payload: ConferenceHistoryResponse = response.json()?;
             let batch = payload
                 .conferences
@@ -135,31 +135,31 @@ impl KTalkHttpClient {
     fn authorized_get(
         &self,
         url: String,
-        cookies: &CookieBundle,
+        auth: &AuthContext,
     ) -> Result<reqwest::blocking::RequestBuilder> {
         Ok(self
             .client
             .get(url)
             .header(
                 AUTHORIZATION,
-                cookies.session_token()?.as_authorization_header(),
+                auth.session_token()?.as_authorization_header(),
             )
-            .header(COOKIE, cookies.as_cookie_header()))
+            .header(COOKIE, auth.as_cookie_header()))
     }
 
     fn authorized_post(
         &self,
         url: String,
-        cookies: &CookieBundle,
+        auth: &AuthContext,
     ) -> Result<reqwest::blocking::RequestBuilder> {
         Ok(self
             .client
             .post(url)
             .header(
                 AUTHORIZATION,
-                cookies.session_token()?.as_authorization_header(),
+                auth.session_token()?.as_authorization_header(),
             )
-            .header(COOKIE, cookies.as_cookie_header()))
+            .header(COOKIE, auth.as_cookie_header()))
     }
 }
 

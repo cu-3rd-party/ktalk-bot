@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse(await chrome.storage.local.get(STORAGE_KEY));
         break;
       case "ktalk.getCookies":
-        sendResponse(await getCookiesForUrl(message.url));
+        sendResponse(await getCookiesForUrl(message.url, message.tabId));
         break;
       default:
         sendResponse({ ok: false, error: "unknown message" });
@@ -197,6 +197,11 @@ function sanitizeDetails(details) {
   };
 }
 
+function cookieMatchesHost(cookie, hostname) {
+  const domain = (cookie.domain || "").replace(/^\./, "");
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
 function isKtalkUrl(url) {
   try {
     const parsed = new URL(url);
@@ -206,26 +211,22 @@ function isKtalkUrl(url) {
   }
 }
 
-async function getCookiesForUrl(url) {
+async function getCookiesForUrl(url, tabId) {
   if (!isKtalkUrl(url)) {
     return { ok: false, error: "Cookies можно копировать только для доменов *.ktalk.ru" };
   }
 
   try {
     const parsed = new URL(url);
-    const cookies = await chrome.cookies.getAll({ domain: parsed.hostname });
-    const neededNames = [
-      "sessionToken",
-      "ngtoken",
-      "kontur_ngtoken"
-    ];
+    const cookies = await chrome.cookies.getAll({});
+    const neededNames = ["ngtoken", "kontur_ngtoken"];
 
     const selected = neededNames
-      .map((name) => cookies.find((cookie) => cookie.name === name))
+      .map((name) => cookies.find((cookie) => cookie.name === name && cookieMatchesHost(cookie, parsed.hostname)))
       .filter(Boolean);
 
     if (selected.length === 0) {
-      return { ok: false, error: "Подходящие cookies не найдены на текущем домене." };
+      return { ok: false, error: "Не удалось найти ngtoken/kontur_ngtoken для текущего KTalk-домена." };
     }
 
     const cookieHeader = selected
@@ -240,11 +241,80 @@ async function getCookiesForUrl(url) {
       names: selected.map((cookie) => cookie.name)
     });
 
+    const sessionToken = Number.isInteger(tabId) ? await getSessionTokenFromLocalStorage(tabId) : null;
+
     return {
       ok: true,
-      cookieHeader
+      cookieHeader,
+      sessionToken
     };
   } catch (error) {
     return { ok: false, error: String(error) };
+  }
+}
+
+
+async function getSessionTokenFromLocalStorage(tabId) {
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const raw = window.localStorage.getItem("session");
+        if (!raw) {
+          return null;
+        }
+
+        const findToken = (value) => {
+          if (!value) {
+            return null;
+          }
+          if (typeof value === "string") {
+            return null;
+          }
+          if (Array.isArray(value)) {
+            for (const item of value) {
+              const nested = findToken(item);
+              if (nested) {
+                return nested;
+              }
+            }
+            return null;
+          }
+          if (typeof value === "object") {
+            if (typeof value.token === "string" && value.token) {
+              return value.token;
+            }
+            for (const nestedValue of Object.values(value)) {
+              const nested = findToken(nestedValue);
+              if (nested) {
+                return nested;
+              }
+            }
+          }
+          return null;
+        };
+
+        try {
+          const parsed = JSON.parse(raw);
+          return findToken(parsed);
+        } catch (_error) {
+          return null;
+        }
+      }
+    });
+
+    if (typeof result === "string" && result) {
+      await appendEvent({
+        timestamp: new Date().toISOString(),
+        source: "extension",
+        stage: "session_token_extracted",
+        tabId
+      });
+      return result;
+    }
+
+    return null;
+  } catch (_error) {
+    return null;
   }
 }

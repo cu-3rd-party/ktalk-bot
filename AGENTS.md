@@ -43,7 +43,7 @@ Source of truth для сетевого протокола:
 import ktalk_bot
 
 client = ktalk_bot.create_engine(
-    "sessionToken=...; ngtoken=...; kontur_ngtoken=..."
+    "ngtoken=...; kontur_ngtoken=..."
 )
 ```
 
@@ -51,7 +51,7 @@ client = ktalk_bot.create_engine(
 
 ```python
 client = ktalk_bot.KTalkClient(
-    "sessionToken=...; ngtoken=...; kontur_ngtoken=..."
+    "ngtoken=...; kontur_ngtoken=..."
 )
 ```
 
@@ -149,7 +149,6 @@ client = ktalk_bot.KTalkClient(
 
 Cookies являются основным входом в engine.
 Минимально важный cookie:
-- `sessionToken`
 
 Часто также нужны:
 - `ngtoken`

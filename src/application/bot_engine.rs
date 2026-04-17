@@ -9,7 +9,7 @@ use tokio::time::{Instant, interval};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use uuid::Uuid;
 
-use crate::domain::auth::CookieBundle;
+use crate::domain::auth::AuthContext;
 use crate::domain::bot::{JoinRoomReport, ParticipantSnapshot, RoomConnection, UserProfile};
 use crate::domain::room::RoomLink;
 use crate::error::{KTalkError, Result};
@@ -19,21 +19,25 @@ use crate::infrastructure::parsing::xmpp::parse_participant_presence;
 #[derive(Debug, Clone)]
 pub struct KTalkBotEngine {
     http_client: KTalkHttpClient,
-    cookies: Arc<Mutex<CookieBundle>>,
+    auth: Arc<Mutex<AuthContext>>,
 }
 
 impl KTalkBotEngine {
-    pub fn new(cookie_header: &str, base_url: impl Into<String>) -> Result<Self> {
-        let cookies = CookieBundle::parse(cookie_header)?;
+    pub fn new(
+        cookie_header: &str,
+        base_url: impl Into<String>,
+        session_token: Option<&str>,
+    ) -> Result<Self> {
+        let auth = AuthContext::parse(cookie_header, session_token)?;
         Ok(Self {
             http_client: KTalkHttpClient::with_base_url(base_url)?,
-            cookies: Arc::new(Mutex::new(cookies)),
+            auth: Arc::new(Mutex::new(auth)),
         })
     }
 
     pub fn renew_cookies(&self) -> Result<UserProfile> {
-        let mut cookies = self.cookies.lock().expect("engine cookie lock poisoned");
-        self.http_client.bootstrap(&mut cookies)
+        let mut auth = self.auth.lock().expect("engine auth lock poisoned");
+        self.http_client.bootstrap(&mut auth)
     }
 
     pub fn fetch_history(
@@ -41,9 +45,9 @@ impl KTalkBotEngine {
         max_pages: usize,
         page_size: usize,
     ) -> Result<Vec<crate::domain::history::ConferenceHistoryRecord>> {
-        let mut cookies = self.cookies.lock().expect("engine cookie lock poisoned");
+        let mut auth = self.auth.lock().expect("engine auth lock poisoned");
         self.http_client
-            .fetch_all_history(&mut cookies, max_pages, page_size)
+            .fetch_all_history(&mut auth, max_pages, page_size)
     }
 
     pub fn join_room(&self, link: &str, duration: Duration) -> Result<JoinRoomReport> {
@@ -53,7 +57,7 @@ impl KTalkBotEngine {
         let (profile, room, cookie_header, session_token, base_url) =
             self.bootstrap_room(&room_client, &room_name)?;
 
-        room_client.send_activity(&room_name, &mut self.cookies.lock().unwrap())?;
+        room_client.send_activity(&room_name, &mut self.auth.lock().unwrap())?;
 
         Runtime::new()?.block_on(run_join_flow(
             base_url,
@@ -111,15 +115,15 @@ impl KTalkBotEngine {
         crate::domain::auth::SessionToken,
         String,
     )> {
-        let mut cookies = self.cookies.lock().expect("engine cookie lock poisoned");
-        let profile = http_client.bootstrap(&mut cookies)?;
-        let conference_id = http_client.resolve_room(room_name, &mut cookies)?;
+        let mut auth = self.auth.lock().expect("engine auth lock poisoned");
+        let profile = http_client.bootstrap(&mut auth)?;
+        let conference_id = http_client.resolve_room(room_name, &mut auth)?;
         let room = RoomConnection {
             room_name: room_name.to_owned(),
             conference_id,
         };
-        let session_token = cookies.session_token()?;
-        let cookie_header = cookies.as_cookie_header();
+        let session_token = auth.session_token()?;
+        let cookie_header = auth.as_cookie_header();
         Ok((
             profile,
             room,

@@ -10,7 +10,8 @@
     "downloads",
     "storage",
     "tabs",
-    "webRequest"
+    "webRequest",
+    "scripting"
   ],
   "host_permissions": [
     "*://ktalk.ru/*",

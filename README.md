@@ -128,7 +128,7 @@ maturin build --release
 import ktalk_bot
 
 client = ktalk_bot.create_engine(
-    "sessionToken=...; ngtoken=...; kontur_ngtoken=..."
+    "ngtoken=...; kontur_ngtoken=..."
 )
 ```
 
@@ -138,7 +138,7 @@ client = ktalk_bot.create_engine(
 import ktalk_bot
 
 client = ktalk_bot.KTalkClient(
-    "sessionToken=...; ngtoken=...; kontur_ngtoken=..."
+    "ngtoken=...; kontur_ngtoken=..."
 )
 ```
 
@@ -262,7 +262,7 @@ help(ktalk_bot.KTalkClient.get_history)
 Ожидаемая сигнатура для функции создания клиента:
 
 ```python
-create_engine(cookie_header: str, base_url: str = "https://centraluniversity.ktalk.ru") -> KTalkClient
+create_engine(cookie_header: str, base_url: str = "https://centraluniversity.ktalk.ru", room_link: str | None = None, session_token: str | None = None) -> KTalkClient
 ```
 
 ## Разработка

@@ -67,14 +67,6 @@ impl CookieBundle {
         Ok(Self { cookies })
     }
 
-    pub fn session_token(&self) -> Result<SessionToken> {
-        let raw = self
-            .cookies
-            .get("sessionToken")
-            .ok_or(KTalkError::MissingSessionCookie)?;
-        SessionToken::parse(raw)
-    }
-
     pub fn as_cookie_header(&self) -> String {
         self.cookies
             .iter()
@@ -104,11 +96,61 @@ impl CookieBundle {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthContext {
+    cookies: CookieBundle,
+    session_token: Option<SessionToken>,
+}
+
+impl AuthContext {
+    pub fn parse(cookie_header: &str, session_token: Option<&str>) -> Result<Self> {
+        Ok(Self {
+            cookies: CookieBundle::parse(cookie_header)?,
+            session_token: session_token.map(SessionToken::parse).transpose()?,
+        })
+    }
+
+    pub fn cookies(&self) -> &CookieBundle {
+        &self.cookies
+    }
+
+    pub fn cookies_mut(&mut self) -> &mut CookieBundle {
+        &mut self.cookies
+    }
+
+    pub fn session_token(&self) -> Result<SessionToken> {
+        self.session_token
+            .clone()
+            .ok_or(KTalkError::MissingSessionToken)
+    }
+
+    pub fn set_session_token(&mut self, session_token: &str) -> Result<()> {
+        self.session_token = Some(SessionToken::parse(session_token)?);
+        Ok(())
+    }
+
+    pub fn session_token_str(&self) -> Option<&str> {
+        self.session_token.as_ref().map(SessionToken::as_str)
+    }
+
+    pub fn as_cookie_header(&self) -> String {
+        self.cookies.as_cookie_header()
+    }
+
+    pub fn merge_set_cookie_headers(&mut self, headers: &HeaderMap) {
+        self.cookies.merge_set_cookie_headers(headers);
+    }
+
+    pub fn get_cookie(&self, name: &str) -> Option<&str> {
+        self.cookies.get(name)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use reqwest::header::{HeaderMap, HeaderValue, SET_COOKIE};
 
-    use super::{CookieBundle, SessionToken};
+    use super::{AuthContext, CookieBundle, SessionToken};
 
     #[test]
     fn strips_session_prefix() {
@@ -123,22 +165,28 @@ mod tests {
     }
 
     #[test]
-    fn parses_cookie_bundle_and_extracts_session() {
-        let cookies = CookieBundle::parse("sessionToken=abc123; ngtoken=xyz").unwrap();
-        assert_eq!(cookies.session_token().unwrap().as_str(), "abc123");
+    fn parses_cookie_bundle_without_session_cookie() {
+        let cookies = CookieBundle::parse("ngtoken=xyz; kontur_ngtoken=qwe").unwrap();
         assert_eq!(cookies.get("ngtoken"), Some("xyz"));
+        assert_eq!(cookies.get("kontur_ngtoken"), Some("qwe"));
+    }
+
+    #[test]
+    fn auth_context_accepts_separate_session_token() {
+        let auth = AuthContext::parse("ngtoken=xyz", Some("Session abc123")).unwrap();
+        assert_eq!(auth.session_token().unwrap().as_str(), "abc123");
     }
 
     #[test]
     fn merges_set_cookie_headers() {
-        let mut cookies = CookieBundle::parse("sessionToken=abc123").unwrap();
+        let mut auth = AuthContext::parse("ngtoken=stale", None).unwrap();
         let mut headers = HeaderMap::new();
         headers.append(
             SET_COOKIE,
             HeaderValue::from_static("ngtoken=fresh; Path=/; HttpOnly"),
         );
 
-        cookies.merge_set_cookie_headers(&headers);
-        assert_eq!(cookies.get("ngtoken"), Some("fresh"));
+        auth.merge_set_cookie_headers(&headers);
+        assert_eq!(auth.get_cookie("ngtoken"), Some("fresh"));
     }
 }
