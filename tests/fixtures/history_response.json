@@ -1,0 +1,39 @@
+{
+  "conferences": [
+    {
+      "key": "conf-1",
+      "roomName": "seminar-room",
+      "title": "Demo Seminar",
+      "startTime": "2026-04-17T09:00:00Z",
+      "endTime": "2026-04-17T10:00:00Z",
+      "participantsCount": 3,
+      "artifacts": {
+        "participants": [
+          {
+            "isAnonymous": false,
+            "userInfo": {
+              "firstname": "Alice",
+              "surname": "Smith"
+            }
+          },
+          {
+            "isAnonymous": true
+          },
+          {
+            "isAnonymous": false,
+            "userInfo": {
+              "firstname": "",
+              "surname": ""
+            }
+          }
+        ],
+        "content": [
+          {
+            "type": "record",
+            "id": "recording-42"
+          }
+        ]
+      }
+    }
+  ]
+}
