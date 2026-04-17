@@ -18,8 +18,18 @@ pub struct KTalkClient {
 #[pymethods]
 impl KTalkClient {
     #[new]
-    #[pyo3(signature = (cookie_header, base_url = "https://centraluniversity.ktalk.ru".to_owned()))]
-    /// Create a client from a raw cookie header string.
+    #[pyo3(
+        signature = (cookie_header, base_url = "https://centraluniversity.ktalk.ru".to_owned()),
+        text_signature = "(cookie_header: str, base_url: str = 'https://centraluniversity.ktalk.ru')"
+    )]
+    /// Создает Python-клиент KTalk из заголовка `Cookie`.
+    ///
+    /// Параметры:
+    ///     cookie_header (str): Полная строка заголовка `Cookie`, содержащая как минимум `sessionToken`.
+    ///     base_url (str): Базовый URL инстанса KTalk.
+    ///
+    /// Возвращает:
+    ///     KTalkClient: Клиент с внутренним engine-объектом, создаваемым под капотом.
     pub fn new(cookie_header: String, base_url: String) -> Self {
         Self {
             cookie_header,
@@ -27,7 +37,11 @@ impl KTalkClient {
         }
     }
 
-    /// Refresh cookies and return the authorized user profile.
+    #[pyo3(text_signature = "($self)")]
+    /// Обновляет cookies через KTalk API и возвращает профиль авторизованного пользователя.
+    ///
+    /// Возвращает:
+    ///     dict[str, str]: Словарь с ключами `user_id`, `first_name`, `last_name`.
     pub fn renew_cookies<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let profile = self.engine()?.renew_cookies().map_err(PyErr::from)?;
         let dict = PyDict::new(py);
@@ -37,8 +51,18 @@ impl KTalkClient {
         Ok(dict)
     }
 
-    /// Fetch conference history records from KTalk.
-    #[pyo3(signature = (max_pages = 10, page_size = 25))]
+    #[pyo3(
+        signature = (max_pages = 10, page_size = 25),
+        text_signature = "($self, max_pages: int = 10, page_size: int = 25)"
+    )]
+    /// Возвращает историю конференций.
+    ///
+    /// Параметры:
+    ///     max_pages (int): Максимальное количество страниц истории.
+    ///     page_size (int): Размер одной страницы.
+    ///
+    /// Возвращает:
+    ///     list[dict[str, object]]: Список конференций с полями комнаты, участников и записи.
     pub fn get_history<'py>(
         &self,
         py: Python<'py>,
@@ -56,8 +80,18 @@ impl KTalkClient {
         records_to_pylist(py, &records)
     }
 
-    /// Join a room for a bounded duration and capture participant snapshots.
-    #[pyo3(signature = (link, duration_seconds = 15))]
+    #[pyo3(
+        signature = (link, duration_seconds = 15),
+        text_signature = "($self, link: str, duration_seconds: int = 15)"
+    )]
+    /// Подключается к комнате на ограниченное время и возвращает отчет о подключении.
+    ///
+    /// Параметры:
+    ///     link (str): Полная ссылка на комнату KTalk.
+    ///     duration_seconds (int): Сколько секунд удерживать подключение.
+    ///
+    /// Возвращает:
+    ///     dict[str, object]: Словарь с ключами `room_name`, `conference_id`, `joined`, `participants`.
     pub fn join_room<'py>(
         &self,
         py: Python<'py>,
@@ -71,15 +105,30 @@ impl KTalkClient {
         join_report_to_pydict(py, &report)
     }
 
-    /// Send a chat message to the room.
+    #[pyo3(text_signature = "($self, link: str, text: str)")]
+    /// Отправляет текстовое сообщение в чат комнаты.
+    ///
+    /// Параметры:
+    ///     link (str): Полная ссылка на комнату KTalk.
+    ///     text (str): Текст сообщения.
     pub fn send_chat_message(&self, link: &str, text: &str) -> PyResult<()> {
         self.engine()?
             .send_chat_message(link, text)
             .map_err(PyErr::from)
     }
 
-    /// Join and return the participants observed during the session.
-    #[pyo3(signature = (link, duration_seconds = 15))]
+    #[pyo3(
+        signature = (link, duration_seconds = 15),
+        text_signature = "($self, link: str, duration_seconds: int = 15)"
+    )]
+    /// Подключается к комнате и возвращает список участников, замеченных во время сессии.
+    ///
+    /// Параметры:
+    ///     link (str): Полная ссылка на комнату KTalk.
+    ///     duration_seconds (int): Длительность сессии в секундах.
+    ///
+    /// Возвращает:
+    ///     list[dict[str, object]]: Список участников с полями `occupant_id`, `display_name`, `user_id`.
     pub fn record_participants<'py>(
         &self,
         py: Python<'py>,
@@ -93,8 +142,19 @@ impl KTalkClient {
         participant_snapshots_to_pylist(py, &participants)
     }
 
-    /// Placeholder until full WebRTC media publishing is implemented.
-    #[pyo3(signature = (link, audio_path, duration_seconds = 15))]
+    #[pyo3(
+        signature = (link, audio_path, duration_seconds = 15),
+        text_signature = "($self, link: str, audio_path: str, duration_seconds: int = 15)"
+    )]
+    /// Пытается воспроизвести аудио в микрофонный канал.
+    ///
+    /// Параметры:
+    ///     link (str): Полная ссылка на комнату KTalk.
+    ///     audio_path (str): Путь к аудиофайлу.
+    ///     duration_seconds (int): Длительность активной сессии.
+    ///
+    /// Исключения:
+    ///     NotImplementedError: Полная публикация WebRTC-аудио пока не реализована.
     pub fn play_audio_on_mic(
         &self,
         link: &str,
@@ -107,9 +167,19 @@ impl KTalkClient {
     }
 }
 
-/// Create an engine-backed client from a raw cookie header string.
 #[pyfunction]
-#[pyo3(signature = (cookie_header, base_url = "https://centraluniversity.ktalk.ru".to_owned()))]
+#[pyo3(
+    signature = (cookie_header, base_url = "https://centraluniversity.ktalk.ru".to_owned()),
+    text_signature = "(cookie_header: str, base_url: str = 'https://centraluniversity.ktalk.ru')"
+)]
+/// Создает black-box engine и возвращает готовый `KTalkClient`.
+///
+/// Параметры:
+///     cookie_header (str): Полная строка заголовка `Cookie`, содержащая `sessionToken`.
+///     base_url (str): Базовый URL инстанса KTalk.
+///
+/// Возвращает:
+///     KTalkClient: Клиент, который использует внутренний engine под капотом.
 pub fn create_engine(cookie_header: String, base_url: String) -> PyResult<KTalkClient> {
     let _ = KTalkBotEngine::new(&cookie_header, &base_url).map_err(PyErr::from)?;
     Ok(KTalkClient::new(cookie_header, base_url))
