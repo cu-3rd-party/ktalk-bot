@@ -15,6 +15,8 @@ pub enum KTalkError {
     MissingSessionCookie,
     #[error("invalid room link: {0}")]
     InvalidRoomLink(String),
+    #[error("unsupported KTalk host: {0}")]
+    InvalidKTalkHost(String),
     #[error("http request failed: {0}")]
     Http(#[from] reqwest::Error),
     #[error("json parsing failed: {0}")]
@@ -40,7 +42,8 @@ impl From<KTalkError> for PyErr {
             KTalkError::EmptyAuthToken
             | KTalkError::InvalidCookieBundle(_)
             | KTalkError::MissingSessionCookie
-            | KTalkError::InvalidRoomLink(_) => PyValueError::new_err(value.to_string()),
+            | KTalkError::InvalidRoomLink(_)
+            | KTalkError::InvalidKTalkHost(_) => PyValueError::new_err(value.to_string()),
             KTalkError::UnsupportedAudioPublishing => {
                 PyNotImplementedError::new_err(value.to_string())
             }

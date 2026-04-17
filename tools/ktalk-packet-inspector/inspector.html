@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <title>KTalk Packet Inspector Log</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="inspector">
+      <header class="header">
+        <div>
+          <h1>Журнал сетевых событий KTalk</h1>
+          <p>HTTP, WebSocket handshake и WebSocket frames для доменов <code>*.ktalk.ru</code>.</p>
+        </div>
+        <div class="actions">
+          <button id="refresh">Обновить</button>
+          <button id="clear">Очистить</button>
+          <button id="export">Экспорт JSON</button>
+        </div>
+      </header>
+      <section>
+        <label for="filter">Фильтр</label>
+        <input id="filter" type="text" placeholder="Например: webSocketFrameReceived или /api/context">
+      </section>
+      <section id="summary" class="summary"></section>
+      <section id="events" class="events"></section>
+    </main>
+    <script type="module" src="inspector.js"></script>
+  </body>
+  </html>

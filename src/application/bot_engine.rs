@@ -49,12 +49,11 @@ impl KTalkBotEngine {
     pub fn join_room(&self, link: &str, duration: Duration) -> Result<JoinRoomReport> {
         let room_link = RoomLink::parse(link)?;
         let room_name = room_link.short_name()?.as_str().to_owned();
-
+        let room_client = self.client_for_room_link(&room_link)?;
         let (profile, room, cookie_header, session_token, base_url) =
-            self.bootstrap_room(&room_name)?;
+            self.bootstrap_room(&room_client, &room_name)?;
 
-        self.http_client
-            .send_activity(&room_name, &mut self.cookies.lock().unwrap())?;
+        room_client.send_activity(&room_name, &mut self.cookies.lock().unwrap())?;
 
         Runtime::new()?.block_on(run_join_flow(
             base_url,
@@ -78,8 +77,9 @@ impl KTalkBotEngine {
     pub fn send_chat_message(&self, link: &str, text: &str) -> Result<()> {
         let room_link = RoomLink::parse(link)?;
         let room_name = room_link.short_name()?.as_str().to_owned();
+        let room_client = self.client_for_room_link(&room_link)?;
         let (profile, _room, cookie_header, session_token, base_url) =
-            self.bootstrap_room(&room_name)?;
+            self.bootstrap_room(&room_client, &room_name)?;
 
         Runtime::new()?.block_on(send_chat_message_inner(
             &base_url,
@@ -102,6 +102,7 @@ impl KTalkBotEngine {
 
     fn bootstrap_room(
         &self,
+        http_client: &KTalkHttpClient,
         room_name: &str,
     ) -> Result<(
         UserProfile,
@@ -111,8 +112,8 @@ impl KTalkBotEngine {
         String,
     )> {
         let mut cookies = self.cookies.lock().expect("engine cookie lock poisoned");
-        let profile = self.http_client.bootstrap(&mut cookies)?;
-        let conference_id = self.http_client.resolve_room(room_name, &mut cookies)?;
+        let profile = http_client.bootstrap(&mut cookies)?;
+        let conference_id = http_client.resolve_room(room_name, &mut cookies)?;
         let room = RoomConnection {
             room_name: room_name.to_owned(),
             conference_id,
@@ -124,8 +125,17 @@ impl KTalkBotEngine {
             room,
             cookie_header,
             session_token,
-            self.http_client.base_url().to_owned(),
+            http_client.base_url().to_owned(),
         ))
+    }
+
+    fn client_for_room_link(&self, room_link: &RoomLink) -> Result<KTalkHttpClient> {
+        let link_base_url = room_link.base_url()?;
+        if link_base_url == self.http_client.base_url() {
+            Ok(self.http_client.clone())
+        } else {
+            KTalkHttpClient::with_base_url(link_base_url)
+        }
     }
 }
 

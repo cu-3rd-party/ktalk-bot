@@ -7,6 +7,7 @@ use reqwest::header::{
 use crate::domain::auth::CookieBundle;
 use crate::domain::bot::UserProfile;
 use crate::domain::history::ConferenceHistoryRecord;
+use crate::domain::room::is_supported_ktalk_host;
 use crate::error::{KTalkError, Result};
 use crate::infrastructure::http::dto::{ConferenceHistoryResponse, ContextResponse, RoomResponse};
 use crate::infrastructure::parsing::history_mapper::map_history_record;
@@ -25,13 +26,20 @@ impl KTalkHttpClient {
     }
 
     pub fn with_base_url(base_url: impl Into<String>) -> Result<Self> {
+        let base_url = base_url.into().trim_end_matches('/').to_owned();
+        let parsed = url::Url::parse(&base_url)
+            .map_err(|_| KTalkError::InvalidRoomLink(base_url.clone()))?;
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| KTalkError::InvalidRoomLink(base_url.clone()))?;
+        if !is_supported_ktalk_host(host) {
+            return Err(KTalkError::InvalidKTalkHost(host.to_owned()));
+        }
+
         let client = Client::builder()
             .default_headers(default_headers())
             .build()?;
-        Ok(Self {
-            client,
-            base_url: base_url.into().trim_end_matches('/').to_owned(),
-        })
+        Ok(Self { client, base_url })
     }
 
     pub fn base_url(&self) -> &str {

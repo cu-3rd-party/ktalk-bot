@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "KTalk Packet Inspector",
+  "version": "0.1.0",
+  "description": "Инструмент разработчика для захвата и анализа сетевого трафика KTalk на доменах *.ktalk.ru.",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "downloads",
+    "storage",
+    "tabs",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "*://ktalk.ru/*",
+    "*://*.ktalk.ru/*"
+  ],
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "KTalk Packet Inspector",
+    "default_popup": "popup.html"
+  }
+}
