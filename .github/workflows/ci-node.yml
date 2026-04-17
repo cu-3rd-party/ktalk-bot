@@ -1,0 +1,125 @@
+name: Node CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  native-matrix:
+    name: native-${{ matrix.os }}-node${{ matrix.node }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux-x64
+            runner: ubuntu-22.04
+            node: 18
+          - os: linux-x64
+            runner: ubuntu-22.04
+            node: 20
+          - os: darwin-x64
+            runner: macos-15-intel
+            node: 18
+          - os: darwin-x64
+            runner: macos-15-intel
+            node: 20
+          - os: win32-x64
+            runner: windows-latest
+            node: 18
+          - os: win32-x64
+            runner: windows-latest
+            node: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm install --include=dev
+        env:
+          KTALK_BOT_SKIP_INSTALL: "1"
+
+      - name: Run Rust tests
+        run: cargo test
+
+      - name: Run Python smoke tests
+        if: runner.os != 'Windows'
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip maturin pytest
+          maturin develop
+          python -m pytest pytests/test_public_api.py
+
+      - name: Build Node native binding
+        run: cargo build --release --no-default-features --features node
+
+      - name: Copy platform binary
+        run: node ./scripts/copy-node-artifact.mjs --destination npm/platforms/${{ matrix.os }}/ktalk_bot.node
+
+      - name: Run Node smoke test
+        run: |
+          npm run test:types
+          npm run test:node
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-${{ matrix.os }}-node${{ matrix.node }}
+          path: npm/platforms/${{ matrix.os }}/ktalk_bot.node
+          retention-days: 3
+
+  npm-pack:
+    name: npm-pack
+    runs-on: ubuntu-22.04
+    needs: native-matrix
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm install --include=dev
+        env:
+          KTALK_BOT_SKIP_INSTALL: "1"
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: npm/artifacts
+
+      - name: Materialize packaged binaries
+        shell: bash
+        run: |
+          mkdir -p npm/platforms/linux-x64 npm/platforms/darwin-x64 npm/platforms/win32-x64
+          cp npm/artifacts/node-linux-x64-node20/ktalk_bot.node npm/platforms/linux-x64/ktalk_bot.node
+          cp npm/artifacts/node-darwin-x64-node20/ktalk_bot.node npm/platforms/darwin-x64/ktalk_bot.node
+          cp npm/artifacts/node-win32-x64-node20/ktalk_bot.node npm/platforms/win32-x64/ktalk_bot.node
+
+      - name: Create npm tarball
+        run: npm pack
+
+      - name: Upload npm tarball
+        uses: actions/upload-artifact@v6
+        with:
+          name: npm-tarball
+          path: "*.tgz"
+          retention-days: 3

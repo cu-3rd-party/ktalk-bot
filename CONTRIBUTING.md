@@ -63,6 +63,7 @@
 - source of truth для протокола — реальные packet captures, а не предположения
 - доменная логика, orchestration и transport-level код должны оставаться разделенными
 - Python API должен оставаться простым и понятным
+- Node.js / TypeScript bindings через `src/interface/node.rs` должны оставаться тонкими и вызывать тот же Rust core, без дублирования protocol logic
 
 ## Как предлагать изменения
 
@@ -95,6 +96,7 @@
 
 - проходит `cargo test`
 - не ломает Python bindings
+- не ломает Node bindings и `npm run test:node`
 - не ухудшает поддержку `*.ktalk.ru`
 - не добавляет лишней привязки к `centraluniversity.ktalk.ru`
 
@@ -110,6 +112,26 @@
 cargo test
 maturin develop
 .venv/bin/python -m pytest pytests
+npm run build:native
+npm run test:node
+```
+
+## Node bindings
+
+Node / TypeScript API живет в `src/interface/node.rs` и gated через cargo feature `node`.
+
+Правила для изменений:
+
+- не переносить сетевую или parser-логику в JS-слой
+- новые экспорты сначала добавлять в Rust core / application layer, затем тонко пробрасывать в `node.rs`
+- сохранять логическое соответствие Python и Node public API
+- для Node-методов предпочитать `Promise`-friendly surface
+
+Локальная сборка Node addon:
+
+```bash
+cargo build --release --no-default-features --features node
+node ./scripts/copy-node-artifact.mjs --destination npm/native/ktalk_bot.node
 ```
 
 Для Chrome extension:

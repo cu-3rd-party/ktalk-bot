@@ -1,0 +1,168 @@
+name: Publish npm
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-native:
+    name: build-${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux-x64
+            runner: ubuntu-22.04
+          - os: darwin-x64
+            runner: macos-15-intel
+          - os: win32-x64
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set release version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["VERSION"]
+
+          cargo_toml = pathlib.Path("Cargo.toml")
+          cargo_text = cargo_toml.read_text(encoding="utf-8")
+          cargo_text, count = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              cargo_text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("failed to update Cargo.toml version")
+          cargo_toml.write_text(cargo_text, encoding="utf-8")
+
+          package_json = pathlib.Path("package.json")
+          package = json.loads(package_json.read_text(encoding="utf-8"))
+          package["version"] = version
+          package_json.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+          print(f"Using release version {version}")
+          PY
+        env:
+          VERSION: ${{ github.ref_name }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm install --include=dev
+        env:
+          KTALK_BOT_SKIP_INSTALL: "1"
+
+      - name: Build Node native binding
+        run: cargo build --release --no-default-features --features node
+
+      - name: Copy platform binary
+        run: node ./scripts/copy-node-artifact.mjs --destination npm/platforms/${{ matrix.os }}/ktalk_bot.node
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: node-${{ matrix.os }}
+          path: npm/platforms/${{ matrix.os }}/ktalk_bot.node
+
+  publish:
+    name: publish
+    runs-on: ubuntu-22.04
+    needs: build-native
+    environment: npm
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set release version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+
+          version = os.environ["VERSION"]
+
+          cargo_toml = pathlib.Path("Cargo.toml")
+          cargo_text = cargo_toml.read_text(encoding="utf-8")
+          cargo_text, count = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              cargo_text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("failed to update Cargo.toml version")
+          cargo_toml.write_text(cargo_text, encoding="utf-8")
+
+          package_json = pathlib.Path("package.json")
+          package = json.loads(package_json.read_text(encoding="utf-8"))
+          package["version"] = version
+          package_json.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+          print(f"Using release version {version}")
+          PY
+        env:
+          VERSION: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm install --include=dev
+        env:
+          KTALK_BOT_SKIP_INSTALL: "1"
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: npm/artifacts
+
+      - name: Materialize packaged binaries
+        shell: bash
+        run: |
+          mkdir -p npm/platforms/linux-x64 npm/platforms/darwin-x64 npm/platforms/win32-x64
+          cp npm/artifacts/node-linux-x64/ktalk_bot.node npm/platforms/linux-x64/ktalk_bot.node
+          cp npm/artifacts/node-darwin-x64/ktalk_bot.node npm/platforms/darwin-x64/ktalk_bot.node
+          cp npm/artifacts/node-win32-x64/ktalk_bot.node npm/platforms/win32-x64/ktalk_bot.node
+
+      - name: Pack npm package
+        run: npm pack
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            npm/platforms/linux-x64/ktalk_bot.node
+            npm/platforms/darwin-x64/ktalk_bot.node
+            npm/platforms/win32-x64/ktalk_bot.node
+            *.tgz
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -10,4 +10,7 @@ pub use crate::domain::auth::{AuthContext, CookieBundle, SessionToken};
 pub use crate::domain::bot::{JoinRoomReport, ParticipantSnapshot, RoomConnection, UserProfile};
 pub use crate::error::{KTalkError, Result};
 pub use crate::infrastructure::http::ktalk_http_client::KTalkHttpClient;
+#[cfg(feature = "node")]
+pub use crate::interface::node::{KTalkClient as NodeKTalkClient, create_engine as create_node_engine};
+#[cfg(feature = "python")]
 pub use crate::interface::python::ktalk_bot;

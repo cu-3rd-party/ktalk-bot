@@ -1,9 +1,10 @@
 # `ktalk-bot`
 
-`ktalk-bot` — это Python-библиотека с реализацией на Rust для работы с KTalk(Jitsi-подобным клиентом конференций).
+`ktalk-bot` — библиотека с реализацией на Rust для работы с KTalk(Jitsi-подобным клиентом конференций).
 
 Проект использует:
 - `PyO3` для Python API
+- `napi-rs` для Node.js / TypeScript API
 - `maturin` для сборки и публикации
 - Rust-код для сетевой логики, парсинга и внутренних engine-объектов
 
@@ -120,6 +121,14 @@ maturin develop
 maturin build --release
 ```
 
+Для Node.js / TypeScript:
+
+```bash
+npm install ktalk-bot
+```
+
+Пакет включает prebuilt native binaries для `linux-x64`, `darwin-x64` и `win32-x64`. На неподдерживаемой платформе установка пытается собрать addon из исходников через локальный Rust toolchain.
+
 ## Базовая идея API
 
 Публичный Python API построен вокруг black-box engine:
@@ -143,6 +152,16 @@ client = ktalk_bot.KTalkClient(
 ```
 
 ## Примеры использования
+
+### TypeScript / Node.js
+
+```ts
+import { create_engine, KTalkClient } from 'ktalk-bot'
+
+const client = create_engine('ngtoken=...; kontur_ngtoken=...')
+const history = await client.get_history(2, 25)
+console.log(history[0]?.room_name)
+```
 
 ### Обновить cookies и получить профиль
 
@@ -258,6 +277,46 @@ help(ktalk_bot.create_engine)
 help(ktalk_bot.KTalkClient)
 help(ktalk_bot.KTalkClient.get_history)
 ```
+
+## Node.js разработка
+
+Локальная сборка Node addon:
+
+```bash
+npm run build:native
+```
+
+Упаковать npm tarball:
+
+```bash
+npm run pack:npm
+```
+
+Запустить Node smoke test:
+
+```bash
+npm run test:node
+```
+
+## Release guide
+
+Для релиза npm должны быть настроены секреты GitHub Actions:
+
+- `NPM_TOKEN`
+- `GITHUB_TOKEN`
+
+Релизный поток:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+Workflow `publish-npm.yml`:
+
+- собирает `.node` binaries для `linux-x64`, `darwin-x64`, `win32-x64`
+- прикладывает их к GitHub Release
+- публикует npm package `ktalk-bot`
 
 Ожидаемая сигнатура для функции создания клиента:
 

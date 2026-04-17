@@ -1,6 +1,8 @@
 use std::io;
 
+#[cfg(feature = "python")]
 use pyo3::PyErr;
+#[cfg(feature = "python")]
 use pyo3::exceptions::{PyIOError, PyNotImplementedError, PyRuntimeError, PyValueError};
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
@@ -37,6 +39,7 @@ pub enum KTalkError {
 
 pub type Result<T> = std::result::Result<T, KTalkError>;
 
+#[cfg(feature = "python")]
 impl From<KTalkError> for PyErr {
     fn from(value: KTalkError) -> Self {
         match value {

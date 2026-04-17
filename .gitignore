@@ -74,3 +74,8 @@ docs/_build/
 
 # Ktalk packet inspector log
 ktalk-*.json
+
+# Node / npm
+node_modules/
+npm/native/
+*.tgz

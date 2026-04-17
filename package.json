@@ -1,0 +1,38 @@
+{
+  "name": "ktalk-bot",
+  "version": "0.1.0",
+  "description": "Node.js and TypeScript bindings for the ktalk-bot Rust engine",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.npm.md",
+    "npm/platforms/**/*",
+    "npm/native/**/*"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build:node": "cargo build --release --no-default-features --features node",
+    "copy:node": "node ./scripts/copy-node-artifact.mjs --destination npm/native/ktalk_bot.node",
+    "build:native": "npm run build:node && npm run copy:node",
+    "pack:npm": "npm pack",
+    "test:types": "./node_modules/.bin/tsc --project tsconfig.json --noEmit",
+    "test:node": "node ./npm/test/smoke.js",
+    "install": "node ./scripts/install-node-binding.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "ktalk",
+    "jitsi",
+    "rust",
+    "napi",
+    "typescript"
+  ]
+}
