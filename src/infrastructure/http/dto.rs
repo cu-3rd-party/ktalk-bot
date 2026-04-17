@@ -49,3 +49,22 @@ pub struct RawContentItem {
     pub kind: Option<String>,
     pub id: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ContextResponse {
+    pub user: RawContextUser,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RawContextUser {
+    pub id: Option<String>,
+    pub login: Option<String>,
+    pub firstname: Option<String>,
+    pub surname: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomResponse {
+    pub conference_id: String,
+}

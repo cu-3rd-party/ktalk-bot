@@ -3,11 +3,13 @@ import pytest
 import ktalk_bot
 
 
-def test_missing_auth_file_raises_io_error():
-    with pytest.raises(OSError):
-        ktalk_bot.get_history(auth_file="does-not-exist.txt", max_pages=1, page_size=1)
+def test_invalid_cookie_bundle_raises_value_error():
+    with pytest.raises(ValueError):
+        ktalk_bot.create_engine("not-a-cookie")
 
 
-def test_client_exposes_history_method():
-    client = ktalk_bot.KTalkClient(auth_file="does-not-exist.txt")
+def test_client_exposes_engine_methods():
+    client = ktalk_bot.KTalkClient("sessionToken=test-token; ngtoken=warm")
     assert hasattr(client, "get_history")
+    assert hasattr(client, "renew_cookies")
+    assert hasattr(client, "join_room")

@@ -3,7 +3,7 @@ use httptest::responders::json_encoded;
 use httptest::{Expectation, Server};
 use serde_json::json;
 
-use ktalk_bot::{KTalkHttpClient, SessionToken};
+use ktalk_bot::{CookieBundle, KTalkHttpClient};
 
 #[test]
 fn fetches_history_records_end_to_end() {
@@ -49,9 +49,9 @@ fn fetches_history_records_end_to_end() {
     );
 
     let client = KTalkHttpClient::with_base_url(server.url_str("")).unwrap();
-    let token = SessionToken::parse("Session test-token").unwrap();
+    let mut cookies = CookieBundle::parse("sessionToken=test-token; ngtoken=warm").unwrap();
 
-    let records = client.fetch_all_history(&token, 3, 25).unwrap();
+    let records = client.fetch_all_history(&mut cookies, 3, 25).unwrap();
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].room_name, "seminar-room");

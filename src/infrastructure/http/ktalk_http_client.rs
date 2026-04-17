@@ -1,10 +1,14 @@
+use chrono::Utc;
 use reqwest::blocking::Client;
-use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT};
+use reqwest::header::{
+    ACCEPT, AUTHORIZATION, CONTENT_TYPE, COOKIE, HeaderMap, HeaderValue, USER_AGENT,
+};
 
-use crate::domain::auth::SessionToken;
+use crate::domain::auth::CookieBundle;
+use crate::domain::bot::UserProfile;
 use crate::domain::history::ConferenceHistoryRecord;
-use crate::error::Result;
-use crate::infrastructure::http::dto::ConferenceHistoryResponse;
+use crate::error::{KTalkError, Result};
+use crate::infrastructure::http::dto::{ConferenceHistoryResponse, ContextResponse, RoomResponse};
 use crate::infrastructure::parsing::history_mapper::map_history_record;
 
 const BASE_URL: &str = "https://centraluniversity.ktalk.ru";
@@ -30,9 +34,58 @@ impl KTalkHttpClient {
         })
     }
 
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub fn bootstrap(&self, cookies: &mut CookieBundle) -> Result<UserProfile> {
+        let response = self
+            .authorized_get(format!("{}/api/context", self.base_url), cookies)?
+            .send()?
+            .error_for_status()?;
+        cookies.merge_set_cookie_headers(response.headers());
+        let payload: ContextResponse = response.json()?;
+
+        Ok(UserProfile {
+            user_id: payload.user.id.or(payload.user.login).ok_or_else(|| {
+                KTalkError::Protocol("context response did not contain user id".to_owned())
+            })?,
+            first_name: payload
+                .user
+                .firstname
+                .unwrap_or_else(|| "Студент".to_owned()),
+            last_name: payload.user.surname.unwrap_or_default(),
+        })
+    }
+
+    pub fn resolve_room(&self, room_name: &str, cookies: &mut CookieBundle) -> Result<String> {
+        let response = self
+            .authorized_get(format!("{}/api/rooms/{room_name}", self.base_url), cookies)?
+            .send()?
+            .error_for_status()?;
+        cookies.merge_set_cookie_headers(response.headers());
+        let payload: RoomResponse = response.json()?;
+        Ok(payload.conference_id)
+    }
+
+    pub fn send_activity(&self, room_name: &str, cookies: &mut CookieBundle) -> Result<()> {
+        let response = self
+            .authorized_post(format!("{}/api/UserActivities", self.base_url), cookies)?
+            .json(&vec![serde_json::json!({
+                "$type": "GotoRoom",
+                "cameraEnabled": false,
+                "micEnabled": false,
+                "roomName": room_name,
+                "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            })])
+            .send()?;
+        cookies.merge_set_cookie_headers(response.headers());
+        Ok(())
+    }
+
     pub fn fetch_all_history(
         &self,
-        token: &SessionToken,
+        cookies: &mut CookieBundle,
         max_pages: usize,
         page_size: usize,
     ) -> Result<Vec<ConferenceHistoryRecord>> {
@@ -40,11 +93,8 @@ impl KTalkHttpClient {
 
         for page_index in 0..max_pages {
             let skip = page_index * page_size;
-            let url = format!("{}/api/conferenceshistory", self.base_url);
             let response = self
-                .client
-                .get(url)
-                .header(AUTHORIZATION, token.as_authorization_header())
+                .authorized_get(format!("{}/api/conferenceshistory", self.base_url), cookies)?
                 .query(&[
                     ("skip", skip.to_string()),
                     ("top", page_size.to_string()),
@@ -52,7 +102,7 @@ impl KTalkHttpClient {
                 ])
                 .send()?
                 .error_for_status()?;
-
+            cookies.merge_set_cookie_headers(response.headers());
             let payload: ConferenceHistoryResponse = response.json()?;
             let batch = payload
                 .conferences
@@ -66,13 +116,42 @@ impl KTalkHttpClient {
 
             let is_last_page = batch.len() < page_size;
             all_records.extend(batch);
-
             if is_last_page {
                 break;
             }
         }
 
         Ok(all_records)
+    }
+
+    fn authorized_get(
+        &self,
+        url: String,
+        cookies: &CookieBundle,
+    ) -> Result<reqwest::blocking::RequestBuilder> {
+        Ok(self
+            .client
+            .get(url)
+            .header(
+                AUTHORIZATION,
+                cookies.session_token()?.as_authorization_header(),
+            )
+            .header(COOKIE, cookies.as_cookie_header()))
+    }
+
+    fn authorized_post(
+        &self,
+        url: String,
+        cookies: &CookieBundle,
+    ) -> Result<reqwest::blocking::RequestBuilder> {
+        Ok(self
+            .client
+            .post(url)
+            .header(
+                AUTHORIZATION,
+                cookies.session_token()?.as_authorization_header(),
+            )
+            .header(COOKIE, cookies.as_cookie_header()))
     }
 }
 
