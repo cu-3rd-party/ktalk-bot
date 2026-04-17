@@ -32,3 +32,6 @@ uuid = { version = "1.18.1", features = ["v4"] }
 
 [dev-dependencies]
 httptest = "0.16.3"
+
+[build-dependencies]
+napi-build = "2.3.1"

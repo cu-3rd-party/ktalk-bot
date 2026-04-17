@@ -925,6 +925,7 @@ dependencies = [
  "http",
  "httptest",
  "napi",
+ "napi-build",
  "napi-derive",
  "pyo3",
  "regex",
